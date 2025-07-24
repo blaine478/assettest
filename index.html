@@ -242,10 +242,10 @@
                 inventoryData.push(data);
                 const isCustomLocation = data.location && locations.every(loc => loc.name !== data.location);
                 const row = document.createElement('tr');
-                row.dataset.id = doc.id; // Ensure dataset.id is set
+                row.dataset.id = doc.id; // Ensure dataset.id is set on tr
                 row.innerHTML = `
                     <td style="display: ${bulkMode ? 'table-cell' : 'none'};" class="selectCell">
-                        <input type="checkbox" class="selectCheckbox" data-id="${doc.id}" />
+                        <input type="checkbox" class="selectCheckbox" />
                     </td>
                     <td>${data.assetTag || ''}</td>
                     <td>${data.description || ''}</td>
@@ -345,15 +345,6 @@
             bulkMode = checked;
             document.getElementById('bulkEditSection').style.display = checked ? 'block' : 'none';
             document.getElementById('selectHeader').style.display = checked ? 'table-cell' : 'none';
-            const selectCells = document.querySelectorAll('.selectCell');
-            selectCells.forEach(cell => cell.style.display = checked ? 'table-cell' : 'none');
-            if (!checked) {
-                const selectCheckboxes = document.querySelectorAll('.selectCheckbox');
-                selectCheckboxes.forEach(cb => cb.checked = false);
-                document.getElementById('bulkLocationSelect').value = '';
-                document.getElementById('bulkLocationCustom').value = '';
-                document.getElementById('bulkLocationCustom').style.display = 'none';
-            }
             fetchInventory(); // Refresh table to add/remove select column
         }
 
@@ -369,16 +360,13 @@
         // Function to apply bulk location
         async function applyBulkLocation() {
             const selectedCheckboxes = document.querySelectorAll('.selectCheckbox:checked');
-            console.log('Selected checkboxes:', selectedCheckboxes.length); // Debug log
             if (selectedCheckboxes.length === 0) {
                 alert('Please select at least one item.');
                 return;
             }
             let location = document.getElementById('bulkLocationSelect').value;
-            console.log('Selected location:', location); // Debug log
             if (location === 'Other') {
                 location = document.getElementById('bulkLocationCustom').value.trim();
-                console.log('Custom location:', location); // Debug log
                 if (!location) {
                     alert('Please enter a custom location.');
                     return;
@@ -389,8 +377,8 @@
             }
             const updates = [];
             selectedCheckboxes.forEach(cb => {
-                const id = cb.dataset.id;
-                console.log('Updating item ID:', id); // Debug log
+                const row = cb.closest('tr');
+                const id = row.dataset.id;
                 updates.push(saveItem(id, true, location));
             });
             try {
