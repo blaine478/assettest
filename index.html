@@ -160,12 +160,10 @@
     <div id="inventory" class="tabcontent">
         <section>
             <h2>Inventory List</h2>
-            <input type="checkbox" id="bulkEditCheckbox" onchange="toggleBulkMode(this.checked)" /> Bulk Edit
+            <label><input type="checkbox" id="bulkMode" onchange="toggleBulkMode(this.checked)" /> Bulk Edit</label>
             <div id="bulkEditSection">
                 <select id="bulkLocationSelect" onchange="handleBulkLocationSelectChange(this.value)">
                     <option value="">Select Location</option>
-                    ${locations.map(loc => `<option value="${loc.name}">${loc.name}</option>`).join('')}
-                    <option value="Other">Other</option>
                 </select>
                 <input type="text" id="bulkLocationCustom" style="display: none;" placeholder="Enter custom location" />
                 <button onclick="applyBulkLocation()">Apply to Selected</button>
@@ -181,6 +179,7 @@
             <table id="inventoryTable">
                 <thead>
                     <tr>
+                        <th id="selectHeader" style="display: none;">Select</th>
                         <th>Asset Tag ID</th>
                         <th>Description</th>
                         <th>Brand</th>
@@ -215,13 +214,13 @@
 
         // Firebase configuration
         const firebaseConfig = {
-            apiKey: "AIzaSyB-9CTRqNkIFEz9OXLwsdgjecRV9-EVLW8",
-            authDomain: "assettest-e5eec.firebaseapp.com",
-            projectId: "assettest-e5eec",
-            storageBucket: "assettest-e5eec.firebasestorage.app",
-            messagingSenderId: "1063399783516",
-            appId: "1:1063399783516:web:f971d72c3cfd6c081dfa99"
-          };
+            apiKey: "AIzaSyCKojz4RoEzHLGKMBhKwUBHHqH_O8m4RCM",
+            authDomain: "assetmanager-6c112.firebaseapp.com",
+            projectId: "assetmanager-6c112",
+            storageBucket: "assetmanager-6c112.firebasestorage.app",
+            messagingSenderId: "358246741952",
+            appId: "1:358246741952:web:90bc4184a02eb5d8573a25"
+        };
 
         // Initialize Firebase
         firebase.initializeApp(firebaseConfig);
@@ -243,7 +242,11 @@
                 inventoryData.push(data);
                 const isCustomLocation = data.location && locations.every(loc => loc.name !== data.location);
                 const row = document.createElement('tr');
+                row.dataset.id = doc.id;
                 row.innerHTML = `
+                    <td style="display: ${bulkMode ? 'table-cell' : 'none'};" class="selectCell">
+                        <input type="checkbox" class="selectCheckbox" />
+                    </td>
                     <td>${data.assetTag || ''}</td>
                     <td>${data.description || ''}</td>
                     <td>${data.brand || ''}</td>
@@ -264,22 +267,105 @@
             });
         }
 
+        // Function to fetch locations
+        async function fetchLocations() {
+            locations = [];
+            const querySnapshot = await db.collection('locations').orderBy('name').get();
+            querySnapshot.forEach((doc) => {
+                const data = doc.data();
+                data.id = doc.id;
+                locations.push(data);
+            });
+            renderLocationsList();
+            renderBatchLocationSelect();
+            fetchInventory(); // Refresh inventory after locations load
+        }
+
+        // Initial fetch
+        fetchLocations();
+
+        // Function to add location
+        async function addLocation() {
+            const newLocationInput = document.getElementById('newLocationInput');
+            const name = newLocationInput.value.trim();
+            if (!name) {
+                alert('Please enter a location name.');
+                return;
+            }
+            try {
+                await db.collection('locations').add({ name });
+                newLocationInput.value = '';
+                fetchLocations();
+            } catch (error) {
+                console.error('Error adding location:', error);
+                alert('Error adding location.');
+            }
+        }
+
+        // Function to delete location
+        async function deleteLocation(id) {
+            if (confirm('Are you sure you want to delete this location?')) {
+                try {
+                    await db.collection('locations').doc(id).delete();
+                    fetchLocations();
+                } catch (error) {
+                    console.error('Error deleting location:', error);
+                    alert('Error deleting location.');
+                }
+            }
+        }
+
+        // Function to render locations list
+        function renderLocationsList() {
+            const locationsList = document.getElementById('locationsList');
+            locationsList.innerHTML = '';
+            locations.forEach(loc => {
+                const div = document.createElement('div');
+                div.className = 'location-item';
+                div.innerHTML = `
+                    <input type="text" value="${loc.name}" disabled />
+                    <button onclick="deleteLocation('${loc.id}')">Delete</button>
+                `;
+                locationsList.appendChild(div);
+            });
+        }
+
+        // Function to render batch location select
+        function renderBatchLocationSelect() {
+            const batchSelect = document.getElementById('bulkLocationSelect');
+            batchSelect.innerHTML = `
+                <option value="">Select Location</option>
+                ${locations.map(loc => `<option value="${loc.name}">${loc.name}</option>`).join('')}
+                <option value="Other">Other</option>
+            `;
+        }
+
         // Function to toggle bulk mode
         function toggleBulkMode(checked) {
             bulkMode = checked;
             document.getElementById('bulkEditSection').style.display = checked ? 'block' : 'none';
-            fetchInventory(); // Refresh table to add/remove select column
+            document.getElementById('selectHeader').style.display = checked ? 'table-cell' : 'none';
+            const selectCells = document.querySelectorAll('.selectCell');
+            selectCells.forEach(cell => cell.style.display = checked ? 'table-cell' : 'none');
+            if (!checked) {
+                const selectCheckboxes = document.querySelectorAll('.selectCheckbox');
+                selectCheckboxes.forEach(cb => cb.checked = false);
+            }
         }
 
         // Function to handle bulk location select change
         function handleBulkLocationSelectChange(value) {
-            document.getElementById('bulkLocationCustom').style.display = (value === 'Other') ? 'block' : 'none';
+            const customInput = document.getElementById('bulkLocationCustom');
+            customInput.style.display = (value === 'Other') ? 'block' : 'none';
+            if (value !== 'Other') {
+                customInput.value = '';
+            }
         }
 
         // Function to apply bulk location
         async function applyBulkLocation() {
-            const selectedIds = Array.from(document.querySelectorAll('.bulk-select:checked')).map(checkbox => checkbox.dataset.id);
-            if (selectedIds.length === 0) {
+            const selectedCheckboxes = document.querySelectorAll('.selectCheckbox:checked');
+            if (selectedCheckboxes.length === 0) {
                 alert('Please select at least one item.');
                 return;
             }
@@ -294,10 +380,13 @@
                 alert('Please select a location.');
                 return;
             }
+            const updates = [];
+            selectedCheckboxes.forEach(cb => {
+                const id = cb.closest('tr').dataset.id;
+                updates.push(saveItem(id, true, location));
+            });
             try {
-                for (const id of selectedIds) {
-                    await saveItem(id, true, location);
-                }
+                await Promise.all(updates);
                 alert('Location applied to selected items.');
                 fetchInventory();
             } catch (error) {
@@ -306,8 +395,237 @@
             }
         }
 
-        // Rest of the script remains the same...
-        // fetchLocations, addLocation, deleteLocation, renderLocationsList, handleCheckboxChange, handleLocationSelectChange, handleCustomLocationBlur, handleLocationChange, saveItem, handleUpload, filterTable, exportToPdf, exportToExcel
+        // Function to handle checkbox change
+        function handleCheckboxChange(id, checkbox) {
+            const checked = checkbox.checked;
+            if (!checked) {
+                if (!confirm('Are you sure you want to uncheck Accounted For? This will clear the location.')) {
+                    checkbox.checked = true; // Revert if canceled
+                    return;
+                }
+            }
+            const locationSelect = document.getElementById(`location-select-${id}`);
+            const locationCustom = document.getElementById(`location-custom-${id}`);
+            locationSelect.style.display = checked ? 'block' : 'none';
+            locationCustom.style.display = (checked && locationSelect.value === 'Other') ? 'block' : 'none';
+            if (!checked) {
+                locationSelect.value = '';
+                locationCustom.value = '';
+                saveItem(id, false, '');
+            } else {
+                // No immediate save; wait for location selection
+            }
+        }
+
+        // Function to handle location select change
+        function handleLocationSelectChange(id, value) {
+            const customInput = document.getElementById(`location-custom-${id}`);
+            customInput.style.display = (value === 'Other') ? 'block' : 'none';
+            if (value !== 'Other' && value !== '') {
+                handleLocationChange(id, value); // Save if not Other
+            } else if (value !== 'Other') {
+                customInput.value = '';
+            }
+            // If Other, wait for custom input blur
+        }
+
+        // Function to handle custom location blur
+        async function handleCustomLocationBlur(id, value) {
+            if (value.trim() === '') {
+                alert('Please enter a custom location or select from the list.');
+                return;
+            }
+            await handleLocationChange(id, value); // Save custom value
+        }
+
+        // Function to handle location change (for both select and custom)
+        async function handleLocationChange(id, value) {
+            const checkbox = document.getElementById(`accountedFor-${id}`);
+            if (value === '') {
+                if (checkbox.checked) {
+                    alert('Please select a location if accounted for.');
+                    checkbox.checked = false;
+                    handleCheckboxChange(id, checkbox);
+                }
+            } else {
+                if (!checkbox.checked) {
+                    checkbox.checked = true;
+                }
+                await saveItem(id, true, value);
+            }
+        }
+
+        // Function to save item
+        async function saveItem(id, accountedFor, location) {
+            try {
+                await db.collection('inventory').doc(id).update({
+                    accountedFor: accountedFor,
+                    location: location
+                });
+                fetchInventory(); // Refresh table to reflect changes
+            } catch (error) {
+                console.error('Error saving changes:', error);
+                alert('Error saving changes. Check console for details.');
+            }
+        }
+
+        // Function to handle Excel upload and import
+        async function handleUpload() {
+            const file = document.getElementById('fileUpload').files[0];
+            if (!file) {
+                alert('Please select a file.');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const sheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[sheetName];
+                    const json = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false }); // Ignore blank rows
+
+                    // Log the parsed data for debugging
+                    console.log('Parsed Excel Data:', json);
+
+                    // Assuming first row is headers
+                    let headers = json[0].map(h => (h || '').toString().trim().toLowerCase());
+                    const rows = json.slice(1);
+
+                    const assetTagIndex = headers.indexOf('asset tag id');
+                    const descriptionIndex = headers.indexOf('description');
+                    const brandIndex = headers.indexOf('brand');
+                    const categoryIndex = headers.indexOf('category');
+
+                    for (const row of rows) {
+                        // Skip empty rows
+                        if (row.every(cell => !cell || cell.toString().trim() === '')) continue;
+
+                        const assetTag = (row[assetTagIndex] || '').toString().trim();
+                        if (!assetTag) continue; // Skip if no asset tag
+
+                        const item = {
+                            assetTag: assetTag,
+                            description: (row[descriptionIndex] || '').toString().trim(),
+                            brand: (row[brandIndex] || '').toString().trim(),
+                            category: (row[categoryIndex] || '').toString().trim(),
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp() // For ordering
+                        };
+                        console.log('Item to process:', item); // Log each item
+
+                        // Check for existing item by assetTag
+                        const querySnapshot = await db.collection('inventory').where('assetTag', '==', assetTag).get();
+                        if (querySnapshot.empty) {
+                            // Add new item
+                            item.accountedFor = false;
+                            item.location = '';
+                            await db.collection('inventory').add(item);
+                        } else {
+                            // Update existing item (preserve accountedFor and location)
+                            const existingDoc = querySnapshot.docs[0];
+                            await db.collection('inventory').doc(existingDoc.id).update({
+                                description: item.description,
+                                brand: item.brand,
+                                category: item.category
+                            });
+                        }
+                    }
+                    fetchInventory(); // Refresh table
+                    alert('Inventory imported successfully! Duplicates based on Asset Tag ID were updated without overwriting accountedFor or location. Check console for parsed data if issues persist.');
+                } catch (error) {
+                    console.error('Error importing file:', error);
+                    alert('Error importing file. Check console for details.');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // Function to filter the table (search + accounted for filter)
+        function filterTable() {
+            const searchInput = document.getElementById('searchInput').value.toLowerCase();
+            const filterValue = document.getElementById('accountedFilter').value;
+            const table = document.getElementById('inventoryTable');
+            const tr = table.getElementsByTagName('tr');
+
+            for (let i = 1; i < tr.length; i++) {
+                let rowText = '';
+                let accountedForText = '';
+                const td = tr[i].getElementsByTagName('td');
+                for (let j = bulkMode ? 1 : 0; j < td.length; j++) {
+                    let cellText = '';
+                    const cellInput = td[j].querySelector('input') || td[j].querySelector('select');
+                    if (cellInput) {
+                        if (cellInput.type === 'checkbox') {
+                            cellText = cellInput.checked ? 'yes' : 'no';
+                            accountedForText = cellText;
+                        } else {
+                            cellText = cellInput.value;
+                        }
+                    } else {
+                        cellText = td[j].textContent || td[j].innerText;
+                    }
+                    rowText += cellText.toLowerCase() + ' ';
+                }
+
+                let showRow = rowText.indexOf(searchInput) > -1;
+                if (filterValue !== 'all') {
+                    showRow = showRow && (accountedForText === filterValue);
+                }
+                tr[i].style.display = showRow ? '' : 'none';
+            }
+        }
+
+        // Function to export to PDF
+        function exportToPdf() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+
+            // Title
+            doc.setFontSize(18);
+            doc.setTextColor(44, 62, 80); // Dark blue
+            doc.text('Tool Inventory Report', 14, 20);
+
+            // Add table
+            doc.autoTable({
+                head: [['Asset Tag ID', 'Description', 'Brand', 'Category', 'Accounted For', 'Location']],
+                body: inventoryData.map(item => [
+                    item.assetTag || '',
+                    item.description || '',
+                    item.brand || '',
+                    item.category || '',
+                    item.accountedFor ? 'Yes' : 'No',
+                    item.location || ''
+                ]),
+                startY: 30,
+                theme: 'grid',
+                styles: { fontSize: 10, cellPadding: 5, overflow: 'linebreak' },
+                headStyles: { fillColor: [52, 152, 219], textColor: [255, 255, 255] }, // Blue header
+                alternateRowStyles: { fillColor: [249, 249, 249] },
+                margin: { top: 30 }
+            });
+
+            doc.save('inventory_report.pdf');
+        }
+
+        // Function to export to Excel
+        function exportToExcel() {
+            const ws_data = [["Asset Tag ID", "Description", "inventoried TKS3?", "Brand", "Category", "Site"]];
+            inventoryData.forEach(item => {
+                ws_data.push([
+                    item.assetTag || '',
+                    item.description || '',
+                    item.accountedFor ? 'Yes' : 'No',
+                    item.brand || '',
+                    item.category || '',
+                    item.location || ''
+                ]);
+            });
+            const ws = XLSX.utils.aoa_to_sheet(ws_data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Inventory");
+            XLSX.writeFile(wb, 'inventory_report.xlsx');
+        }
     </script>
 </body>
 </html>
