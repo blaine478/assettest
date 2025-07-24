@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tool Inventory Manager</title>
+    <!-- Firebase SDKs (Compat versions for global access) -->
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+    <!-- SheetJS for Excel parsing and export -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <!-- jsPDF for PDF export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <!-- jsPDF AutoTable for nicer PDF tables -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf-autotable.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            padding: 20px;
+            background-color: #f4f7fa;
+            color: #333;
+        }
+        h1, h2 {
+            color: #2c3e50;
+        }
+        .tabs {
+            overflow: hidden;
+            border-bottom: 1px solid #ccc;
+            background-color: #f1f1f1;
+            margin-bottom: 20px;
+        }
+        .tablink {
+            background-color: inherit;
+            float: left;
+            border: none;
+            outline: none;
+            cursor: pointer;
+            padding: 14px 16px;
+            transition: 0.3s;
+            font-size: 17px;
+        }
+        .tablink:hover {
+            background-color: #ddd;
+        }
+        .tablink.active {
+            background-color: #ccc;
+        }
+        .tabcontent {
+            display: none;
+            padding: 6px 12px;
+            border-top: none;
+        }
+        section {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        th, td {
+            border: 1px solid #e0e0e0;
+            padding: 12px;
+            text-align: left;
+        }
+        th {
+            background-color: #3498db;
+            color: white;
+            font-weight: bold;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        tr:hover {
+            background-color: #e8f4fd;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            margin-left: 10px;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        input[type="file"], input[type="text"], select {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            margin-right: 10px;
+        }
+        #searchInput {
+            width: 100%;
+            max-width: 300px;
+            margin-bottom: 10px;
+        }
+        #accountedFilter {
+            width: 200px;
+            margin-bottom: 10px;
+        }
+        #exportPdf, #exportExcel {
+            float: right;
+            background-color: #27ae60;
+        }
+        #exportPdf:hover, #exportExcel:hover {
+            background-color: #219d52;
+        }
+        #locationsList {
+            margin-top: 10px;
+        }
+        .location-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        .location-item input {
+            flex: 1;
+            margin-right: 10px;
+        }
+        #bulkEditSection {
+            margin-bottom: 10px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Tool Inventory Manager</h1>
+    
+    <div class="tabs">
+        <button class="tablink" onclick="openTab(event, 'inventory')" id="defaultOpen">Inventory</button>
+        <button class="tablink" onclick="openTab(event, 'settings')">Settings</button>
+    </div>
+
+    <div id="settings" class="tabcontent">
+        <section>
+            <h2>Upload Excel Sheet</h2>
+            <input type="file" id="fileUpload" accept=".xlsx, .xls" />
+            <button onclick="handleUpload()">Upload and Import</button>
+        </section>
+        
+        <section>
+            <h2>Manage Locations</h2>
+            <input type="text" id="newLocationInput" placeholder="Enter new location" />
+            <button onclick="addLocation()">Add Location</button>
+            <div id="locationsList"></div>
+        </section>
+    </div>
+    
+    <div id="inventory" class="tabcontent">
+        <section>
+            <h2>Inventory List</h2>
+            <input type="checkbox" id="bulkEditCheckbox" onchange="toggleBulkMode(this.checked)" /> Bulk Edit
+            <div id="bulkEditSection">
+                <select id="bulkLocationSelect" onchange="handleBulkLocationSelectChange(this.value)">
+                    <option value="">Select Location</option>
+                    ${locations.map(loc => `<option value="${loc.name}">${loc.name}</option>`).join('')}
+                    <option value="Other">Other</option>
+                </select>
+                <input type="text" id="bulkLocationCustom" style="display: none;" placeholder="Enter custom location" />
+                <button onclick="applyBulkLocation()">Apply to Selected</button>
+            </div>
+            <input type="text" id="searchInput" onkeyup="filterTable()" placeholder="Search inventory..." />
+            <select id="accountedFilter" onchange="filterTable()">
+                <option value="all">All</option>
+                <option value="yes">Accounted For</option>
+                <option value="no">Not Accounted For</option>
+            </select>
+            <button id="exportPdf" onclick="exportToPdf()">Export to PDF</button>
+            <button id="exportExcel" onclick="exportToExcel()">Export to Excel</button>
+            <table id="inventoryTable">
+                <thead>
+                    <tr>
+                        <th>Asset Tag ID</th>
+                        <th>Description</th>
+                        <th>Brand</th>
+                        <th>Category</th>
+                        <th>Accounted For</th>
+                        <th>Location</th>
+                    </tr>
+                </thead>
+                <tbody id="inventoryBody"></tbody>
+            </table>
+        </section>
+    </div>
+
+    <script>
+        // Tab switching function
+        function openTab(evt, tabName) {
+            var i, tabcontent, tablinks;
+            tabcontent = document.getElementsByClassName("tabcontent");
+            for (i = 0; i < tabcontent.length; i++) {
+                tabcontent[i].style.display = "none";
+            }
+            tablinks = document.getElementsByClassName("tablink");
+            for (i = 0; i < tablinks.length; i++) {
+                tablinks[i].className = tablinks[i].className.replace(" active", "");
+            }
+            document.getElementById(tabName).style.display = "block";
+            evt.currentTarget.className += " active";
+        }
+
+        // Open the default tab (Inventory)
+        document.getElementById("defaultOpen").click();
+
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyCKojz4RoEzHLGKMBhKwUBHHqH_O8m4RCM",
+            authDomain: "assetmanager-6c112.firebaseapp.com",
+            projectId: "assetmanager-6c112",
+            storageBucket: "assetmanager-6c112.firebasestorage.app",
+            messagingSenderId: "358246741952",
+            appId: "1:358246741952:web:90bc4184a02eb5d8573a25"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        let inventoryData = []; // Store fetched data for PDF export and search
+        let locations = []; // Store locations
+        let bulkMode = false; // Track bulk edit mode
+
+        // Function to fetch and display inventory
+        async function fetchInventory() {
+            inventoryData = []; // Clear previous data
+            const inventoryBody = document.getElementById('inventoryBody');
+            inventoryBody.innerHTML = ''; // Clear table
+            const querySnapshot = await db.collection('inventory').orderBy('createdAt').get();
+            querySnapshot.forEach((doc) => {
+                const data = doc.data();
+                data.id = doc.id; // Add ID to data for reference
+                inventoryData.push(data);
+                const isCustomLocation = data.location && locations.every(loc => loc.name !== data.location);
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${data.assetTag || ''}</td>
+                    <td>${data.description || ''}</td>
+                    <td>${data.brand || ''}</td>
+                    <td>${data.category || ''}</td>
+                    <td>
+                        <input type="checkbox" id="accountedFor-${doc.id}" ${data.accountedFor ? 'checked' : ''} onchange="handleCheckboxChange('${doc.id}', this)" />
+                    </td>
+                    <td>
+                        <select id="location-select-${doc.id}" style="display: ${data.accountedFor ? 'block' : 'none'};" onchange="handleLocationSelectChange('${doc.id}', this.value)">
+                            <option value="">Select Location</option>
+                            ${locations.map(loc => `<option value="${loc.name}" ${data.location === loc.name ? 'selected' : ''}>${loc.name}</option>`).join('')}
+                            <option value="Other" ${isCustomLocation ? 'selected' : ''}>Other</option>
+                        </select>
+                        <input type="text" id="location-custom-${doc.id}" value="${isCustomLocation ? data.location.replace(/"/g, '"') : ''}" style="display: ${data.accountedFor && isCustomLocation ? 'block' : 'none'};" placeholder="Enter custom location" onblur="handleCustomLocationBlur('${doc.id}', this.value)" />
+                    </td>
+                `;
+                inventoryBody.appendChild(row);
+            });
+        }
+
+        // Function to toggle bulk mode
+        function toggleBulkMode(checked) {
+            bulkMode = checked;
+            document.getElementById('bulkEditSection').style.display = checked ? 'block' : 'none';
+            fetchInventory(); // Refresh table to add/remove select column
+        }
+
+        // Function to handle bulk location select change
+        function handleBulkLocationSelectChange(value) {
+            document.getElementById('bulkLocationCustom').style.display = (value === 'Other') ? 'block' : 'none';
+        }
+
+        // Function to apply bulk location
+        async function applyBulkLocation() {
+            const selectedIds = Array.from(document.querySelectorAll('.bulk-select:checked')).map(checkbox => checkbox.dataset.id);
+            if (selectedIds.length === 0) {
+                alert('Please select at least one item.');
+                return;
+            }
+            let location = document.getElementById('bulkLocationSelect').value;
+            if (location === 'Other') {
+                location = document.getElementById('bulkLocationCustom').value.trim();
+                if (!location) {
+                    alert('Please enter a custom location.');
+                    return;
+                }
+            } else if (location === '') {
+                alert('Please select a location.');
+                return;
+            }
+            try {
+                for (const id of selectedIds) {
+                    await saveItem(id, true, location);
+                }
+                alert('Location applied to selected items.');
+                fetchInventory();
+            } catch (error) {
+                console.error('Error applying bulk location:', error);
+                alert('Error applying bulk location.');
+            }
+        }
+
+        // Rest of the script remains the same...
+        // fetchLocations, addLocation, deleteLocation, renderLocationsList, handleCheckboxChange, handleLocationSelectChange, handleCustomLocationBlur, handleLocationChange, saveItem, handleUpload, filterTable, exportToPdf, exportToExcel
+    </script>
+</body>
+</html>
