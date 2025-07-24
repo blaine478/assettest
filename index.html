@@ -155,19 +155,23 @@
             <button onclick="addLocation()">Add Location</button>
             <div id="locationsList"></div>
         </section>
-    </div>
-    
-    <div id="inventory" class="tabcontent">
+        
         <section>
-            <h2>Inventory List</h2>
-            <label><input type="checkbox" id="bulkMode" onchange="toggleBulkMode(this.checked)" /> Bulk Edit</label>
-            <div id="bulkEditSection">
+            <h2>Bulk Edit Mode</h2>
+            <label><input type="checkbox" id="bulkMode" onchange="toggleBulkMode(this.checked)" /> Enable Bulk Edit (Select items in Inventory tab)</label>
+            <div id="bulkEditSection" style="display: none;">
                 <select id="bulkLocationSelect" onchange="handleBulkLocationSelectChange(this.value)">
                     <option value="">Select Location</option>
                 </select>
                 <input type="text" id="bulkLocationCustom" style="display: none;" placeholder="Enter custom location" />
                 <button onclick="applyBulkLocation()">Apply to Selected</button>
             </div>
+        </section>
+    </div>
+    
+    <div id="inventory" class="tabcontent">
+        <section>
+            <h2>Inventory List</h2>
             <input type="text" id="searchInput" onkeyup="filterTable()" placeholder="Search inventory..." />
             <select id="accountedFilter" onchange="filterTable()">
                 <option value="all">All</option>
@@ -207,6 +211,9 @@
             }
             document.getElementById(tabName).style.display = "block";
             evt.currentTarget.className += " active";
+            if (tabName === 'inventory') {
+                fetchInventory(); // Refresh inventory when switching to Inventory tab
+            }
         }
 
         // Open the default tab (Inventory)
@@ -344,7 +351,6 @@
         function toggleBulkMode(checked) {
             bulkMode = checked;
             document.getElementById('bulkEditSection').style.display = checked ? 'block' : 'none';
-            document.getElementById('selectHeader').style.display = checked ? 'table-cell' : 'none';
             fetchInventory(); // Refresh table to add/remove select column
         }
 
@@ -360,13 +366,16 @@
         // Function to apply bulk location
         async function applyBulkLocation() {
             const selectedCheckboxes = document.querySelectorAll('.selectCheckbox:checked');
+            console.log('Number of selected checkboxes:', selectedCheckboxes.length); // Debug log
             if (selectedCheckboxes.length === 0) {
                 alert('Please select at least one item.');
                 return;
             }
             let location = document.getElementById('bulkLocationSelect').value;
+            console.log('Selected location:', location); // Debug log
             if (location === 'Other') {
                 location = document.getElementById('bulkLocationCustom').value.trim();
+                console.log('Custom location:', location); // Debug log
                 if (!location) {
                     alert('Please enter a custom location.');
                     return;
@@ -377,8 +386,8 @@
             }
             const updates = [];
             selectedCheckboxes.forEach(cb => {
-                const row = cb.closest('tr');
-                const id = row.dataset.id;
+                const id = cb.closest('tr').dataset.id;
+                console.log('Updating item ID:', id); // Debug log
                 updates.push(saveItem(id, true, location));
             });
             try {
